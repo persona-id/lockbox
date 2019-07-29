@@ -33,6 +33,8 @@ class ActiveStorageTest < Minitest::Test
   end
 
   def test_encrypt_blob
+    skip if ActiveStorage::VERSION::MAJOR >= 6
+
     message = "hello world"
     user = User.create!
     user.avatar.attach(io: StringIO.new(message), filename: "test.txt")

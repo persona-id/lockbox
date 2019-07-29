@@ -29,12 +29,12 @@ class Lockbox
     end
 
     def self.encrypted?(record, name)
-      encrypted_options(record, name).present?
+      !encrypted_options(record, name).nil?
     end
 
     def self.encrypt_attachable(record, name, attachable)
       options = encrypted_options(record, name)
-      box = build_box(record, options)
+      box = build_box(record, options, record.class.table_name, name)
 
       case attachable
       when ActiveStorage::Blob

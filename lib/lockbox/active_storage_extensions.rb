@@ -10,11 +10,11 @@ class Lockbox
       def encrypted?
         # could use record_type directly
         # but record should already be loaded most of the time
-        !Utils.encrypted_options(record, name).nil?
+        Utils.encrypted?(record, name)
       end
 
       def encrypt_attachable(attachable)
-        Lockbox::Utils.encrypt_attachable(record, name, attachable)
+        Utils.encrypt_attachable(record, name, attachable)
       end
 
       def rebuild_attachable(attachment)
