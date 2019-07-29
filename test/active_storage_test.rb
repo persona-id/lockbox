@@ -32,7 +32,30 @@ class ActiveStorageTest < Minitest::Test
     assert_equal message, user.avatar.download
   end
 
+  def test_encrypt_blob
+    message = "hello world"
+    user = User.create!
+    user.avatar.attach(io: StringIO.new(message), filename: "test.txt")
+
+    user2 = User.create!
+
+    assert_raises NotImplementedError do
+      user2.avatar.attach(user.avatar.blob)
+    end
+  end
+
+  def test_encrypt_string
+    message = "hello world"
+    user = User.create!
+
+    assert_raises NotImplementedError do
+      user.avatar.attach(message)
+    end
+  end
+
   def test_encrypt_create
+    skip if ActiveStorage::VERSION::MAJOR >= 6
+
     message = "hello world"
 
     file = Tempfile.new
@@ -140,5 +163,13 @@ class ActiveStorageTest < Minitest::Test
     assert_equal "image/png", user.avatar.content_type
     assert_equal "image.png", user.avatar.filename.to_s
     assert_equal File.binread(path), user.avatar.download
+  end
+
+  def test_has_one_attached_with_no_encrypted_attachments
+    message = "hello world"
+    post = Post.create!(title: "123")
+    post.photo.attach(io: StringIO.new(message), filename: "test.txt")
+    assert_equal message, post.photo.download
+    assert_equal message, post.photo.blob.download
   end
 end
