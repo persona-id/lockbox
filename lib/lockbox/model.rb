@@ -215,7 +215,7 @@ class Lockbox
                   ciphertext
                 else
                   ciphertext = Base64.decode64(ciphertext) if encode
-                  Lockbox::Utils.build_box(self, options, self.class.try(:table_name) || self.class.collection_name, encrypted_attribute).decrypt(ciphertext)
+                  Lockbox::Utils.build_box(self, options, self.class.try(:table_name) || self.class.collection_name.to_s, encrypted_attribute).decrypt(ciphertext)
                 end
 
               unless message.nil?
@@ -264,7 +264,7 @@ class Lockbox
 
           # for fixtures
           define_singleton_method class_method_name do |message, **opts|
-            ciphertext = Lockbox::Utils.build_box(opts[:context], options, try(:table_name) || collection_name, encrypted_attribute).encrypt(message)
+            ciphertext = Lockbox::Utils.build_box(opts[:context], options, try(:table_name) || collection_name.to_s, encrypted_attribute).encrypt(message)
             ciphertext = Base64.strict_encode64(ciphertext) if encode
             ciphertext
           end
