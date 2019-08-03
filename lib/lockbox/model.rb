@@ -133,7 +133,7 @@ class Lockbox
               end
             end
 
-            if included_modules.include?(Mongoid::Document)
+            if defined?(Mongoid::Document) && included_modules.include?(Mongoid::Document)
               def reload
                 self.class.lockbox_attributes.each do |_, v|
                   self.send("#{v[:attribute]}=", nil)
