@@ -139,7 +139,7 @@ class Lockbox
             if defined?(Mongoid::Document) && included_modules.include?(Mongoid::Document)
               def reload
                 self.class.lockbox_attributes.each do |_, v|
-                  self.send("#{v[:attribute]}=", nil)
+                  instance_variable_set("@#{v[:attribute]}", nil)
                 end
                 super
               end
