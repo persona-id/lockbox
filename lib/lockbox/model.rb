@@ -127,8 +127,11 @@ class Lockbox
               self.class.lockbox_attributes.each do |_, lockbox_attribute|
                 attribute = lockbox_attribute[:attribute]
 
-                if changes.include?(attribute) && (self.class.try(:attribute_types) || {})[attribute].is_a?(ActiveRecord::Type::Serialized)
-                  send("#{attribute}=", send(attribute))
+                if changes.include?(attribute)
+                  type = (self.class.try(:attribute_types) || {})[attribute]
+                  if type && type.is_a?(ActiveRecord::Type::Serialized)
+                    send("#{attribute}=", send(attribute))
+                  end
                 end
               end
             end
@@ -189,7 +192,7 @@ class Lockbox
                 # encrypt will convert to binary
               else
                 type = (self.class.try(:attribute_types) || {})[name.to_s]
-                if type.is_a?(ActiveRecord::Type::Serialized)
+                if type && type.is_a?(ActiveRecord::Type::Serialized)
                   message = type.serialize(message)
                 end
               end
@@ -249,7 +252,7 @@ class Lockbox
                   # decrypt returns binary string
                 else
                   type = (self.class.try(:attribute_types) || {})[name.to_s]
-                  if type.is_a?(ActiveRecord::Type::Serialized)
+                  if type && type.is_a?(ActiveRecord::Type::Serialized)
                     message = type.deserialize(message)
                   else
                     # default to string if not serialized
