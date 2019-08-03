@@ -132,6 +132,15 @@ class Lockbox
                 end
               end
             end
+
+            if included_modules.include?(Mongoid::Document)
+              def reload
+                self.class.lockbox_attributes.each do |_, v|
+                  self.send("#{v[:attribute]}=", nil)
+                end
+                super
+              end
+            end
           end
 
           serialize name, JSON if options[:type] == :json
@@ -140,8 +149,8 @@ class Lockbox
           if respond_to?(:attribute)
             attribute name, attribute_type
           else
-            # TODO do not persist!
-            field name
+            include Module.new { attr_accessor name }
+            alias_method "#{name}_changed?", "#{name}_ciphertext_changed?"
           end
 
           define_method("#{name}=") do |message|
