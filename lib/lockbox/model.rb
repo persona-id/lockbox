@@ -127,7 +127,7 @@ class Lockbox
               self.class.lockbox_attributes.each do |_, lockbox_attribute|
                 attribute = lockbox_attribute[:attribute]
 
-                if changes.include?(attribute) && self.class.attribute_types[attribute].is_a?(ActiveRecord::Type::Serialized)
+                if changes.include?(attribute) && (self.class.try(:attribute_types) || {})[attribute].is_a?(ActiveRecord::Type::Serialized)
                   send("#{attribute}=", send(attribute))
                 end
               end
@@ -140,7 +140,7 @@ class Lockbox
           if respond_to?(:attribute)
             attribute name, attribute_type
           else
-            attr_accessor name
+            include Module.new { attr_accessor name }
           end
 
           define_method("#{name}=") do |message|
@@ -199,6 +199,7 @@ class Lockbox
               else
                 self.class.send(class_method_name, message, context: self)
               end
+
             send("#{encrypted_attribute}=", ciphertext)
 
             super(original_message)
@@ -214,7 +215,7 @@ class Lockbox
                   ciphertext
                 else
                   ciphertext = Base64.decode64(ciphertext) if encode
-                  Lockbox::Utils.build_box(self, options, self.class.table_name, encrypted_attribute).decrypt(ciphertext)
+                  Lockbox::Utils.build_box(self, options, self.class.try(:table_name) || self.class.collection_name, encrypted_attribute).decrypt(ciphertext)
                 end
 
               unless message.nil?
@@ -248,12 +249,12 @@ class Lockbox
               end
 
               # set previous attribute on first decrypt
-              @attributes[name.to_s].instance_variable_set("@value_before_type_cast", message)
+              @attributes[name.to_s].instance_variable_set("@value_before_type_cast", message) if @attributes[name.to_s]
 
               # cache
               if respond_to?(:_write_attribute, true)
                 _write_attribute(name, message)
-              else
+              elsif respond_to?(:raw_write_attribute)
                 raw_write_attribute(name, message)
               end
             end
@@ -263,7 +264,7 @@ class Lockbox
 
           # for fixtures
           define_singleton_method class_method_name do |message, **opts|
-            ciphertext = Lockbox::Utils.build_box(opts[:context], options, table_name, encrypted_attribute).encrypt(message)
+            ciphertext = Lockbox::Utils.build_box(opts[:context], options, try(:table_name) || collection_name, encrypted_attribute).encrypt(message)
             ciphertext = Base64.strict_encode64(ciphertext) if encode
             ciphertext
           end
