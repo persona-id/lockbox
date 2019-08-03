@@ -154,7 +154,6 @@ class Lockbox
           else
             include Module.new { attr_accessor name }
             alias_method "#{name}_changed?", "#{name}_ciphertext_changed?"
-            p "hi"
           end
 
           define_method("#{name}=") do |message|
