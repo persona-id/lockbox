@@ -20,10 +20,10 @@ if defined?(ActiveSupport)
   end
 end
 
-if defined?(ActiveModel)
-  # TODO find better ActiveModel hook
+begin
   require "active_model/callbacks"
   ActiveModel::Callbacks.include(Lockbox::Model)
+rescue LoadError
 end
 
 class Lockbox
