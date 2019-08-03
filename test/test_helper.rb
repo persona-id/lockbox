@@ -56,6 +56,8 @@ if ENV["VERBOSE"]
   ActiveRecord::Base.logger = logger
   ActiveJob::Base.logger = logger
   ActiveStorage.logger = logger if defined?(ActiveStorage)
+  Mongoid.logger = logger
+  Mongo::Logger.logger = logger
 end
 
 require "carrierwave/orm/activerecord"

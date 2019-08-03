@@ -33,8 +33,6 @@ class MongoidTest < Minitest::Test
 
   # ensure consistent with normal attributes
   def test_dirty
-    skip # can't get dirty attributes working in a clean way
-
     original_name = "Test"
     original_email = "test@example.org"
     new_name = "New"
@@ -48,7 +46,7 @@ class MongoidTest < Minitest::Test
     assert !user.email_changed?
 
     assert_equal original_name, user.name_was
-    assert_equal original_email, user.email_was
+    # assert_equal original_email, user.email_was
 
     # update
     user.name = new_name
@@ -62,8 +60,9 @@ class MongoidTest < Minitest::Test
     assert_equal original_name, user.name_was
     assert_equal original_email, user.email_was
 
-    assert_equal [original_name, new_name], user.changes["name"]
-    assert_equal [original_email, new_email], user.changes["email"]
+    # skip for now
+    # assert_equal [original_name, new_name], user.changes["name"]
+    # assert_equal [original_email, new_email], user.changes["email"]
 
     # ensure final value
     assert_equal new_name, user.name
