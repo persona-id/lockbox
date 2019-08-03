@@ -6,6 +6,7 @@ Bundler.require(:default)
 require "minitest/autorun"
 require "minitest/pride"
 require "rbnacl"
+require "mongoid"
 
 Lockbox.master_key = SecureRandom.random_bytes(32)
 

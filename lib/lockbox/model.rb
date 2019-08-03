@@ -137,7 +137,11 @@ class Lockbox
           serialize name, JSON if options[:type] == :json
           serialize name, Hash if options[:type] == :hash
 
-          attribute name, attribute_type
+          if respond_to?(:attribute)
+            attribute name, attribute_type
+          else
+            attr_accessor name
+          end
 
           define_method("#{name}=") do |message|
             original_message = message
@@ -174,7 +178,7 @@ class Lockbox
                 # do nothing
                 # encrypt will convert to binary
               else
-                type = self.class.attribute_types[name.to_s]
+                type = (self.class.try(:attribute_types) || {})[name.to_s]
                 if type.is_a?(ActiveRecord::Type::Serialized)
                   message = type.serialize(message)
                 end
@@ -233,7 +237,7 @@ class Lockbox
                   # do nothing
                   # decrypt returns binary string
                 else
-                  type = self.class.attribute_types[name.to_s]
+                  type = (self.class.try(:attribute_types) || {})[name.to_s]
                   if type.is_a?(ActiveRecord::Type::Serialized)
                     message = type.deserialize(message)
                   else

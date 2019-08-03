@@ -6,6 +6,7 @@ require "securerandom"
 require "lockbox/box"
 require "lockbox/encryptor"
 require "lockbox/key_generator"
+require "lockbox/model"
 require "lockbox/utils"
 require "lockbox/version"
 
@@ -15,9 +16,14 @@ require "lockbox/railtie" if defined?(Rails)
 
 if defined?(ActiveSupport)
   ActiveSupport.on_load(:active_record) do
-    require "lockbox/model"
     extend Lockbox::Model
   end
+end
+
+if defined?(ActiveModel)
+  # TODO find better ActiveModel hook
+  require "active_model/callbacks"
+  ActiveModel::Callbacks.include(Lockbox::Model)
 end
 
 class Lockbox
