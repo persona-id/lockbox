@@ -2,7 +2,7 @@ require_relative "test_helper"
 
 class MongoidTest < Minitest::Test
   def teardown
-    SafePerson.all.each do |person|
+    Guard.all.each do |person|
       bad_keys = person.attributes.keys & %w(email phone ssn)
       assert_equal [], bad_keys, "Bad keys"
     end
