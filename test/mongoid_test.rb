@@ -46,11 +46,7 @@ class MongoidTest < Minitest::Test
     assert !user.email_changed?
 
     assert_equal original_name, user.name_was
-    if ActiveRecord::VERSION::STRING >= "5.2"
-      assert_nil user.email_was
-    else
-      assert_equal original_email, user.email_was
-    end
+    assert_equal original_email, user.email_was
 
     # update
     user.name = new_name
