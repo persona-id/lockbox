@@ -1,6 +1,10 @@
 require_relative "test_helper"
 
 class MongoidTest < Minitest::Test
+  def setup
+    Person.delete_all
+  end
+
   def teardown
     # very important!!
     # ensure no plaintext attributes exist
@@ -42,8 +46,6 @@ class MongoidTest < Minitest::Test
 
   # ensure consistent with normal attributes
   def test_dirty
-    skip
-
     original_name = "Test"
     original_email = "test@example.org"
     new_name = "New"

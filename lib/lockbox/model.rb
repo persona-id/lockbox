@@ -139,7 +139,7 @@ class Lockbox
             if defined?(Mongoid::Document) && included_modules.include?(Mongoid::Document)
               def reload
                 self.class.lockbox_attributes.each do |_, v|
-                  send("#{v[:attribute]}=", nil)
+                  instance_variable_set("@#{v[:attribute]}", nil)
                 end
                 super
               end
@@ -152,8 +152,32 @@ class Lockbox
           if respond_to?(:attribute)
             attribute name, attribute_type
           else
-            include Module.new { attr_accessor name }
+            m = Module.new do
+              define_method("#{name}=") do |val|
+                prev_val = instance_variable_get("@#{name}")
+
+                unless val == prev_val
+                  # custom attribute_will_change! method
+                  unless changed_attributes.key?(name.to_s)
+                    changed_attributes[name.to_s] = prev_val.__deep_copy__
+                  end
+                end
+
+                instance_variable_set("@#{name}", val)
+              end
+
+              define_method(name) do
+                instance_variable_get("@#{name}")
+              end
+            end
+
+            include m
+
             alias_method "#{name}_changed?", "#{name}_ciphertext_changed?"
+
+            define_method "#{name}_was" do
+              attribute_was(name.to_s)
+            end
           end
 
           define_method("#{name}=") do |message|
@@ -269,6 +293,8 @@ class Lockbox
                 _write_attribute(name, message)
               elsif respond_to?(:raw_write_attribute)
                 raw_write_attribute(name, message)
+              else
+                instance_variable_set("@#{name}", message)
               end
             end
 
