@@ -140,7 +140,8 @@ class Lockbox
           if respond_to?(:attribute)
             attribute name, attribute_type
           else
-            include Module.new { attr_accessor name }
+            # TODO do not persist!
+            field name
           end
 
           define_method("#{name}=") do |message|
