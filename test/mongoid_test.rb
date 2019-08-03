@@ -6,7 +6,7 @@ class MongoidTest < Minitest::Test
     # ensure no plaintext attributes exist
     Guard.all.each do |person|
       bad_keys = person.attributes.keys & %w(email phone ssn)
-      assert_equal [], bad_keys, "Bad keys"
+      assert_equal [], bad_keys, "Plaintext attribute exists"
     end
   end
 
