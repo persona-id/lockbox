@@ -73,24 +73,6 @@ class MongoidTest < Minitest::Test
     refute_equal original_email_ciphertext, user.email_ciphertext
   end
 
-  def test_dirty_before_last_save
-    skip if Rails.version < "5.1"
-
-    original_name = "Test"
-    original_email = "test@example.org"
-    new_name = "New"
-    new_email = "new@example.org"
-
-    user = Person.create!(name: original_name, email: original_email)
-    user = Person.last
-
-    user.update!(name: new_name, email: new_email)
-
-    # ensure updated
-    assert_equal original_name, user.name_before_last_save
-    assert_equal original_email, user.email_before_last_save
-  end
-
   def test_dirty_bad_ciphertext
     user = Person.create!(email_ciphertext: "bad")
     user.email = "test@example.org"
@@ -111,17 +93,12 @@ class MongoidTest < Minitest::Test
     user = Person.create!(email: original_email)
     user.email = new_email
     assert_equal new_email, user.email
-    assert_equal new_email, user.attributes["email"]
 
     # reload
     user.reload
 
-    # not loaded yet
-    assert_nil user.attributes["email"]
-
     # loaded
     assert_equal original_email, user.email
-    assert_equal original_email, user.attributes["email"]
   end
 
   def test_nil
@@ -176,7 +153,7 @@ class MongoidTest < Minitest::Test
   def test_attribute_key_encrypted_column
     email = "test@example.org"
     user = Person.create!(email: email)
-    key = Lockbox.attribute_key(table: "users", attribute: "email_ciphertext")
+    key = Lockbox.attribute_key(table: "people", attribute: "email_ciphertext")
     box = Lockbox.new(key: key)
     assert_equal email, box.decrypt(Base64.decode64(user.email_ciphertext))
   end
@@ -184,7 +161,7 @@ class MongoidTest < Minitest::Test
   def test_class_method
     email = "test@example.org"
     ciphertext = Person.generate_email_ciphertext(email)
-    key = Lockbox.attribute_key(table: "users", attribute: "email_ciphertext")
+    key = Lockbox.attribute_key(table: "people", attribute: "email_ciphertext")
     box = Lockbox.new(key: key)
     assert_equal email, box.decrypt(Base64.decode64(ciphertext))
   end
