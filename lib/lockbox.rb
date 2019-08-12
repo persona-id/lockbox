@@ -18,12 +18,10 @@ if defined?(ActiveSupport)
   ActiveSupport.on_load(:active_record) do
     extend Lockbox::Model
   end
-end
 
-begin
-  require "active_model/callbacks"
-  ActiveModel::Callbacks.include(Lockbox::Model)
-rescue LoadError
+  ActiveSupport.on_load(:mongoid) do
+    Mongoid::Document::ClassMethods.include(Lockbox::Model)
+  end
 end
 
 class Lockbox
