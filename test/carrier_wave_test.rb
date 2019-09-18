@@ -65,7 +65,7 @@ class CarrierWaveTest < Minitest::Test
     uploader.retrieve_from_store!("image.png")
 
     # incorrect mime type in CarrierWave 2.0
-    # assert_equal "image/png", uploader.content_type
+    assert_equal "image/png", uploader.content_type
     assert_equal File.binread(path), uploader.read
   end
 

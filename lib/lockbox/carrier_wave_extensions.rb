@@ -17,6 +17,15 @@ class Lockbox
           read.bytesize
         end
 
+        # need to confirm this is secure
+        def content_type
+          @content_type ||= begin
+            content_type = super
+            content_type = file.send(:mini_mime_content_type) if content_type == "invalid/invalid"
+            content_type
+          end
+        end
+
         def rotate_encryption!
           io = Lockbox::IO.new(read)
           io.original_filename = file.filename
