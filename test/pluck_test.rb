@@ -5,6 +5,7 @@ class PluckTest < Minitest::Test
     skip if mongoid?
 
     User.delete_all
+    Robot.delete_all
   end
 
   def test_symbol
@@ -45,11 +46,32 @@ class PluckTest < Minitest::Test
     assert_equal ["test2@example.org"], User.where(name: "Test 2").pluck("email")
   end
 
+  def test_callable_options_record
+    Admin.create!(other_email: "test@example.org")
+    assert_equal ["test@example.org"], Admin.pluck(:other_email)
+  end
+
+  def test_callable_options_record
+    Admin.create!(personal_email: "test@example.org")
+    error = assert_raises(NameError) do
+      Admin.pluck(:personal_email)
+    end
+    assert_match "undefined local variable or method `record_key'", error.message
+  end
+
   def test_symbol_options
     Admin.create!(email: "test@example.org")
     error = assert_raises(Lockbox::Error) do
       Admin.pluck(:email)
     end
     assert_equal "Not available since :key depends on record", error.message
+  end
+
+  def test_migrating
+    Robot.create!(name: "Test 1")
+    Robot.create!(name: "Test 2")
+
+    Robot.update_all(name_ciphertext: nil)
+    assert_equal ["Test 1", "Test 2"], Robot.order(:id).pluck(:name)
   end
 end

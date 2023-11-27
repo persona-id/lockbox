@@ -1,3 +1,70 @@
+## 0.6.8 (2022-01-25)
+
+- Fixed issue with `encrypts` loading model schema early
+- Removed warning for attributes with `default` option
+
+## 0.6.7 (2022-01-25)
+
+- Added warning for attributes with `default` option
+- Removed warning for Active Record 5.0 (still supported)
+
+## 0.6.6 (2021-09-27)
+
+- Fixed `attribute?` method for `boolean` and `integer` types
+
+## 0.6.5 (2021-07-07)
+
+- Fixed issue with `pluck` extension not loading in some cases
+
+## 0.6.4 (2021-04-05)
+
+- Fixed in place changes in callbacks
+- Fixed `[]` method for encrypted attributes
+
+## 0.6.3 (2021-03-30)
+
+- Fixed empty arrays and hashes
+- Fixed content type for CarrierWave 2.2.1
+
+## 0.6.2 (2021-02-08)
+
+- Added `inet` type
+- Fixed error when `lockbox` key in Rails credentials has a string value
+- Fixed deprecation warning with Active Record 6.1
+
+## 0.6.1 (2020-12-03)
+
+- Added integration with Rails credentials
+- Added warning for unsupported versions of Active Record
+- Fixed in place changes for Active Record 6.1
+- Fixed error with `content_type` method for CarrierWave < 2
+
+## 0.6.0 (2020-12-03)
+
+- Added `encrypted` flag to Active Storage metadata
+- Added encrypted columns to `filter_attributes`
+- Improved `inspect` method
+
+## 0.5.0 (2020-11-22)
+
+- Improved error messages for hybrid cryptography
+- Changed warning to error when no attributes specified
+- Fixed issue with `pluck` when migrating
+- Fixed error with `key_table` and `key_attribute` options with `previous_versions`
+
+## 0.4.9 (2020-10-01)
+
+- Added `key_table` and `key_attribute` options to `previous_versions`
+- Added `encrypted_attribute` option
+- Added support for encrypting empty string
+- Improved `inspect` for models with encrypted attributes
+
+## 0.4.8 (2020-08-30)
+
+- Added `key_table` and `key_attribute` options
+- Added warning when no attributes specified
+- Fixed error when Active Support partially loaded
+
 ## 0.4.7 (2020-08-18)
 
 - Added `lockbox_options` method to encrypted CarrierWave uploaders

@@ -1,6 +1,6 @@
 module Lockbox
   module Model
-    def encrypts(*attributes, **options)
+    def lockbox_encrypts(*attributes, **options)
       # support objects
       # case options[:type]
       # when Date
@@ -22,16 +22,25 @@ module Lockbox
       # end
 
       custom_type = options[:type].respond_to?(:serialize) && options[:type].respond_to?(:deserialize)
-      raise ArgumentError, "Unknown type: #{options[:type]}" unless custom_type || [nil, :string, :boolean, :date, :datetime, :time, :integer, :float, :binary, :json, :hash, :array].include?(options[:type])
+      valid_types = [nil, :string, :boolean, :date, :datetime, :time, :integer, :float, :binary, :json, :hash, :array, :inet]
+      raise ArgumentError, "Unknown type: #{options[:type]}" unless custom_type || valid_types.include?(options[:type])
 
       activerecord = defined?(ActiveRecord::Base) && self < ActiveRecord::Base
       raise ArgumentError, "Type not supported yet with Mongoid" if options[:type] && !activerecord
 
-      attributes.each do |name|
-        # add default options
-        encrypted_attribute = "#{name}_ciphertext"
+      raise ArgumentError, "No attributes specified" if attributes.empty?
 
-        options = options.dup
+      raise ArgumentError, "Cannot use key_attribute with multiple attributes" if options[:key_attribute] && attributes.size > 1
+
+      original_options = options.dup
+
+      attributes.each do |name|
+        # per attribute options
+        # TODO use a different name
+        options = original_options.dup
+
+        # add default options
+        encrypted_attribute = options.delete(:encrypted_attribute) || "#{name}_ciphertext"
 
         # migrating
         original_name = name.to_sym
@@ -47,6 +56,15 @@ module Lockbox
         decrypt_method_name = "decrypt_#{encrypted_attribute}"
 
         class_eval do
+          # Lockbox uses custom inspect
+          # but this could be useful for other gems
+          if activerecord && ActiveRecord::VERSION::MAJOR >= 6
+            # only add virtual attribute
+            # need to use regexp since strings do partial matching
+            # also, need to use += instead of <<
+            self.filter_attributes += [/\A#{Regexp.escape(options[:attribute])}\z/]
+          end
+
           @lockbox_attributes ||= {}
 
           if @lockbox_attributes.empty?
@@ -71,12 +89,42 @@ module Lockbox
               super(options)
             end
 
-            # use same approach as devise
+            # maintain order
+            # replace ciphertext attributes w/ virtual attributes (filtered)
             def inspect
-              inspection =
-                serializable_hash.map do |k,v|
-                  "#{k}: #{respond_to?(:attribute_for_inspect) ? attribute_for_inspect(k) : v.inspect}"
+              lockbox_attributes = {}
+              lockbox_encrypted_attributes = {}
+              self.class.lockbox_attributes.each do |_, lockbox_attribute|
+                lockbox_attributes[lockbox_attribute[:attribute]] = true
+                lockbox_encrypted_attributes[lockbox_attribute[:encrypted_attribute]] = lockbox_attribute[:attribute]
+              end
+
+              inspection = []
+              # use serializable_hash like Devise
+              values = serializable_hash
+              self.class.attribute_names.each do |k|
+                next if !has_attribute?(k) || lockbox_attributes[k]
+
+                # check for lockbox attribute
+                if lockbox_encrypted_attributes[k]
+                  # check if ciphertext attribute nil to avoid loading attribute
+                  v = send(k).nil? ? "nil" : "[FILTERED]"
+                  k = lockbox_encrypted_attributes[k]
+                elsif values.key?(k)
+                  v = respond_to?(:attribute_for_inspect) ? attribute_for_inspect(k) : values[k].inspect
+
+                  # fix for https://github.com/rails/rails/issues/40725
+                  # TODO only apply to Active Record 6.0
+                  if respond_to?(:inspection_filter, true) && v != "nil"
+                    v = inspection_filter.filter_param(k, v)
+                  end
+                else
+                  next
                 end
+
+                inspection << "#{k}: #{v}"
+              end
+
               "#<#{self.class} #{inspection.join(", ")}>"
             end
 
@@ -101,14 +149,36 @@ module Lockbox
               # needed for in-place modifications
               # assigned attributes are encrypted on assignment
               # and then again here
-              before_save do
+              def lockbox_sync_attributes
                 self.class.lockbox_attributes.each do |_, lockbox_attribute|
                   attribute = lockbox_attribute[:attribute]
 
-                  if attribute_changed_in_place?(attribute)
+                  if attribute_changed_in_place?(attribute) || (send("#{attribute}_changed?") && !send("#{lockbox_attribute[:encrypted_attribute]}_changed?"))
                     send("#{attribute}=", send(attribute))
                   end
                 end
+              end
+
+              # safety check
+              [:_create_record, :_update_record].each do |method_name|
+                unless private_method_defined?(method_name) || method_defined?(method_name)
+                  raise Lockbox::Error, "Expected #{method_name} to be defined. Please report an issue."
+                end
+              end
+
+              def _create_record(*)
+                lockbox_sync_attributes
+                super
+              end
+
+              def _update_record(*)
+                lockbox_sync_attributes
+                super
+              end
+
+              def [](attr_name)
+                send(attr_name) if self.class.lockbox_attributes.any? { |_, la| la[:attribute] == attr_name.to_s }
+                super
               end
 
               def update_columns(attributes)
@@ -146,8 +216,11 @@ module Lockbox
                 attributes_to_set.each do |k, v|
                   if respond_to?(:write_attribute_without_type_cast, true)
                     write_attribute_without_type_cast(k, v)
-                  else
+                  elsif respond_to?(:raw_write_attribute, true)
                     raw_write_attribute(k, v)
+                  else
+                    @attributes.write_cast_value(k, v)
+                    clear_attribute_change(k)
                   end
                 end
 
@@ -164,6 +237,7 @@ module Lockbox
           end
 
           raise "Duplicate encrypted attribute: #{original_name}" if lockbox_attributes[original_name]
+          raise "Multiple encrypted attributes use the same column: #{encrypted_attribute}" if lockbox_attributes.any? { |_, v| v[:encrypted_attribute] == encrypted_attribute }
           @lockbox_attributes[original_name] = options
 
           if activerecord
@@ -199,6 +273,23 @@ module Lockbox
               else
                 attribute name, :string
               end
+            else
+              # hack for Active Record 6.1
+              # to set string type after serialize
+              # otherwise, type gets set to ActiveModel::Type::Value
+              # which always returns false for changed_in_place?
+              # earlier versions of Active Record take the previous code path
+              if ActiveRecord::VERSION::STRING.to_f >= 7.0 && attributes_to_define_after_schema_loads[name.to_s].first.is_a?(Proc)
+                attribute_type = attributes_to_define_after_schema_loads[name.to_s].first.call(nil)
+                if attribute_type.is_a?(ActiveRecord::Type::Serialized) && attribute_type.subtype.nil?
+                  attribute name, ActiveRecord::Type::Serialized.new(ActiveRecord::Type::String.new, attribute_type.coder)
+                end
+              elsif ActiveRecord::VERSION::STRING.to_f >= 6.1 && attributes_to_define_after_schema_loads[name.to_s].first.is_a?(Proc)
+                attribute_type = attributes_to_define_after_schema_loads[name.to_s].first.call
+                if attribute_type.is_a?(ActiveRecord::Type::Serialized) && attribute_type.subtype.nil?
+                  attribute name, ActiveRecord::Type::Serialized.new(ActiveRecord::Type::String.new, attribute_type.coder)
+                end
+              end
             end
 
             define_method("#{name}_was") do
@@ -217,6 +308,11 @@ module Lockbox
                 send(name) # writes attribute when not already set
                 super()
               end
+            end
+
+            define_method("#{name}?") do
+              # uses public_send, so we don't need to preload attribute
+              query_attribute(name)
             end
           else
             # keep this module dead simple
@@ -257,10 +353,10 @@ module Lockbox
               send("reset_#{encrypted_attribute}_to_default!")
               send(name)
             end
-          end
 
-          define_method("#{name}?") do
-            send("#{encrypted_attribute}?")
+            define_method("#{name}?") do
+              send("#{encrypted_attribute}?")
+            end
           end
 
           define_method("#{name}=") do |message|
@@ -310,7 +406,11 @@ module Lockbox
             # check for this explicitly as a layer of safety
             if message.nil? || ((message == {} || message == []) && activerecord && @attributes[name.to_s].value_before_type_cast.nil?)
               ciphertext = send(encrypted_attribute)
-              message = self.class.send(decrypt_method_name, ciphertext, context: self)
+
+              # keep original message for empty hashes and arrays
+              unless ciphertext.nil?
+                message = self.class.send(decrypt_method_name, ciphertext, context: self)
+              end
 
               if activerecord
                 # set previous attribute so changes populate correctly
@@ -322,8 +422,13 @@ module Lockbox
                 # decrypt method does type casting
                 if respond_to?(:write_attribute_without_type_cast, true)
                   write_attribute_without_type_cast(name.to_s, message) if !@attributes.frozen?
-                else
+                elsif respond_to?(:raw_write_attribute, true)
                   raw_write_attribute(name, message) if !@attributes.frozen?
+                else
+                  if !@attributes.frozen?
+                    @attributes.write_cast_value(name.to_s, message)
+                    clear_attribute_change(name)
+                  end
                 end
               else
                 instance_variable_set("@#{name}", message)
@@ -338,7 +443,7 @@ module Lockbox
             table = activerecord ? table_name : collection_name.to_s
 
             unless message.nil?
-              # TODO use attribute type class in 0.5.0
+              # TODO use attribute type class in 0.7.0
               case options[:type]
               when :boolean
                 message = ActiveRecord::Type::Boolean.new.serialize(message)
@@ -366,6 +471,14 @@ module Lockbox
                 message = ActiveRecord::Type::Float.new.serialize(message)
                 # double precision, big endian
                 message = [message].pack("G") unless message.nil?
+              when :inet
+                unless message.nil?
+                  ip = message.is_a?(IPAddr) ? message : (IPAddr.new(message) rescue nil)
+                  # same format as Postgres, with ipv4 padded to 16 bytes
+                  # family, netmask, ip
+                  # return nil for invalid IP like Active Record
+                  message = ip ? [ip.ipv4? ? 0 : 1, ip.prefix, ip.hton].pack("CCa16") : nil
+                end
               when :string, :binary
                 # do nothing
                 # encrypt will convert to binary
@@ -393,7 +506,7 @@ module Lockbox
               end
 
             unless message.nil?
-              # TODO use attribute type class in 0.5.0
+              # TODO use attribute type class in 0.7.0
               case options[:type]
               when :boolean
                 message = message == "t"
@@ -412,6 +525,11 @@ module Lockbox
               when :binary
                 # do nothing
                 # decrypt returns binary string
+              when :inet
+                family, prefix, addr = message.unpack("CCa16")
+                len = family == 0 ? 4 : 16
+                message = IPAddr.new_ntoh(addr.first(len))
+                message.prefix = prefix
               else
                 # use original name for serialized attributes
                 type = (try(:attribute_types) || {})[original_name.to_s]

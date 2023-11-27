@@ -1,6 +1,7 @@
 module Lockbox
   class Utils
     def self.build_box(context, options, table, attribute)
+      # dup options (with except) since keys are sometimes changed or deleted
       options = options.except(:attribute, :encrypted_attribute, :migrating, :attached, :type)
       options[:encode] = false unless options.key?(:encode)
       options.each do |k, v|
@@ -16,14 +17,32 @@ module Lockbox
       end
 
       unless options[:key] || options[:encryption_key] || options[:decryption_key]
-        options[:key] = Lockbox.attribute_key(table: table, attribute: attribute, master_key: options.delete(:master_key), encode: false)
+        options[:key] =
+          Lockbox.attribute_key(
+            table: options.delete(:key_table) || table,
+            attribute: options.delete(:key_attribute) || attribute,
+            master_key: options.delete(:master_key),
+            encode: false
+          )
       end
 
       if options[:previous_versions].is_a?(Array)
-        options[:previous_versions] = options[:previous_versions].dup
+        # dup previous versions array (with map) since elements are updated
+        # dup each version (with dup) since keys are sometimes deleted
+        options[:previous_versions] = options[:previous_versions].map(&:dup)
         options[:previous_versions].each_with_index do |version, i|
-          if !(version[:key] || version[:encryption_key] || version[:decryption_key]) && version[:master_key]
-            options[:previous_versions][i] = version.merge(key: Lockbox.attribute_key(table: table, attribute: attribute, master_key: version.delete(:master_key), encode: false))
+          if !(version[:key] || version[:encryption_key] || version[:decryption_key]) && (version[:master_key] || version[:key_table] || version[:key_attribute])
+            # could also use key_table and key_attribute from options
+            # when specified, but keep simple for now
+            # also, this change isn't backward compatible
+            key =
+              Lockbox.attribute_key(
+                table: version.delete(:key_table) || table,
+                attribute: version.delete(:key_attribute) || attribute,
+                master_key: version.delete(:master_key),
+                encode: false
+              )
+            options[:previous_versions][i] = version.merge(key: key)
           end
         end
       end
@@ -40,7 +59,7 @@ module Lockbox
         key = [key].pack("H*")
       end
 
-      raise Lockbox::Error, "#{name} must be 32 bytes (64 hex digits)" if key.bytesize != size
+      raise Lockbox::Error, "#{name} must be #{size} bytes (#{size * 2} hex digits)" if key.bytesize != size
       raise Lockbox::Error, "#{name} must use binary encoding" if key.encoding != Encoding::BINARY
 
       key
@@ -70,13 +89,11 @@ module Lockbox
           attachable = attachable.dup
           attachable[:io] = box.encrypt_io(io)
         else
-          # TODO raise ArgumentError
-          raise NotImplementedError, "Could not find or build blob: expected attachable, got #{attachable.inspect}"
+          raise ArgumentError, "Could not find or build blob: expected attachable, got #{attachable.inspect}"
         end
 
         # don't analyze encrypted data
-        metadata = {"analyzed" => true}
-        metadata["encrypted"] = true if options[:migrating]
+        metadata = {"analyzed" => true, "encrypted" => true}
         attachable[:metadata] = (attachable[:metadata] || {}).merge(metadata)
       end
 

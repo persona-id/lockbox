@@ -18,9 +18,10 @@ module Lockbox
       # In encryption mode, it must be set after calling #encrypt and setting #key= and #iv=
       cipher.auth_data = associated_data || ""
 
-      ciphertext = cipher.update(message) + cipher.final
+      ciphertext = String.new
+      ciphertext << cipher.update(message) unless message.empty?
+      ciphertext << cipher.final
       ciphertext << cipher.auth_tag
-
       ciphertext
     end
 
@@ -29,7 +30,6 @@ module Lockbox
 
       fail_decryption if nonce.to_s.bytesize != nonce_bytes
       fail_decryption if auth_tag.to_s.bytesize != auth_tag_bytes
-      fail_decryption if ciphertext.to_s.bytesize == 0
 
       cipher = OpenSSL::Cipher.new("aes-256-gcm")
       # do not change order of operations
@@ -43,7 +43,10 @@ module Lockbox
       cipher.auth_data = associated_data || ""
 
       begin
-        cipher.update(ciphertext) + cipher.final
+        message = String.new
+        message << cipher.update(ciphertext) unless ciphertext.to_s.empty?
+        message << cipher.final
+        message
       rescue OpenSSL::Cipher::CipherError
         fail_decryption
       end

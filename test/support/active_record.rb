@@ -1,5 +1,10 @@
 require "active_record"
 
+# TODO remove when Active Record 7 released
+if ActiveRecord::VERSION::MAJOR >= 7
+  ActiveRecord::Base.singleton_class.alias_method(:encrypts, :lockbox_encrypts)
+end
+
 ActiveRecord::Base.logger = $logger
 
 class User < ActiveRecord::Base
@@ -73,12 +78,19 @@ class User < ActiveRecord::Base
   encrypts :data2, type: :json
   encrypts :info2, type: :hash
   encrypts :coordinates2, type: :array
+
+  if ENV["ADAPTER"] == "postgresql"
+    encrypts :ip2, type: :inet
+  end
+
   encrypts :city, padding: true
   encrypts :ssn, encode: false
 
   encrypts :state
 
   has_rich_text :content if respond_to?(:has_rich_text)
+
+  include PhotoUploader::Attachment(:photo)
 end
 
 class Post < ActiveRecord::Base
@@ -110,13 +122,31 @@ end
 
 class Admin < ActiveRecord::Base
   encrypts :email, key: :record_key
+  encrypts :personal_email, key: -> { record_key }
+  encrypts :other_email, key: -> { "2"*64 }
 
   def record_key
     "1"*64
   end
+
+  encrypts :email_address, key_table: "users", key_attribute: "email_ciphertext", previous_versions: [{key_table: "people", key_attribute: "email_ciphertext"}]
+  encrypts :work_email, encrypted_attribute: "encrypted_email"
 end
 
 class Agent < ActiveRecord::Base
   key_pair = Lockbox.generate_key_pair
   encrypts :email, algorithm: "hybrid", encryption_key: key_pair[:encryption_key]
 end
+
+class Person < ActiveRecord::Base
+  encrypts :data, type: :json
+
+  before_save :update_data
+
+  def update_data
+    data["count"] += 1
+  end
+end
+
+# ensure encrypts does not cause model schema to load
+raise "encrypts loading model schema early" if Person.send(:schema_loaded?)

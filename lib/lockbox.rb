@@ -4,6 +4,7 @@ require "openssl"
 require "securerandom"
 
 # modules
+require "lockbox/aes_gcm"
 require "lockbox/box"
 require "lockbox/calculations"
 require "lockbox/encryptor"
@@ -19,18 +20,29 @@ require "lockbox/version"
 require "lockbox/carrier_wave_extensions" if defined?(CarrierWave)
 require "lockbox/railtie" if defined?(Rails)
 
-if defined?(ActiveSupport)
+if defined?(ActiveSupport::LogSubscriber)
   require "lockbox/log_subscriber"
   Lockbox::LogSubscriber.attach_to :lockbox
+end
 
+if defined?(ActiveSupport.on_load)
   ActiveSupport.on_load(:active_record) do
+    # TODO raise error in 0.7.0
+    if ActiveRecord::VERSION::STRING.to_f < 5.0
+      warn "Active Record version (#{ActiveRecord::VERSION::STRING}) not supported in this version of Lockbox (#{Lockbox::VERSION})"
+    end
+
     extend Lockbox::Model
     extend Lockbox::Model::Attached
-    ActiveRecord::Calculations.prepend Lockbox::Calculations
+    # alias_method is private in Ruby < 2.5
+    singleton_class.send(:alias_method, :encrypts, :lockbox_encrypts) if ActiveRecord::VERSION::MAJOR < 7
+    ActiveRecord::Relation.prepend Lockbox::Calculations
   end
 
   ActiveSupport.on_load(:mongoid) do
     Mongoid::Document::ClassMethods.include(Lockbox::Model)
+    # alias_method is private in Ruby < 2.5
+    Mongoid::Document::ClassMethods.send(:alias_method, :encrypts, :lockbox_encrypts)
   end
 end
 
@@ -98,7 +110,7 @@ module Lockbox
 
   def self.encrypts_action_text_body(**options)
     ActiveSupport.on_load(:action_text_rich_text) do
-      ActionText::RichText.encrypts :body, **options
+      ActionText::RichText.lockbox_encrypts :body, **options
     end
   end
 end

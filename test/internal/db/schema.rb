@@ -17,6 +17,7 @@ ActiveRecord::Schema.define do
     t.bigint   :byte_size,  null: false
     t.string   :checksum,   null: false
     t.datetime :created_at, null: false
+    t.string   :service_name
 
     t.index [ :key ], unique: true
   end
@@ -70,6 +71,12 @@ ActiveRecord::Schema.define do
     t.text :configuration2_ciphertext
     t.text :coordinates
     t.text :coordinates2_ciphertext
+
+    if ENV["ADAPTER"] == "postgresql"
+      t.inet :ip
+      t.text :ip2_ciphertext
+    end
+
     t.text :config
     t.text :config2_ciphertext
     t.text :conf_ciphertext
@@ -77,6 +84,7 @@ ActiveRecord::Schema.define do
     t.binary :ssn_ciphertext
     t.text :state
     t.text :state_ciphertext
+    t.text :photo_data
   end
 
   create_table :posts do |t|
@@ -98,10 +106,18 @@ ActiveRecord::Schema.define do
   create_table :admins do |t|
     t.text :name
     t.text :email_ciphertext
+    t.text :personal_email_ciphertext
+    t.text :other_email_ciphertext
+    t.text :email_address_ciphertext
+    t.text :encrypted_email
   end
 
   create_table :agents do |t|
     t.text :name
     t.text :email_ciphertext
+  end
+
+  create_table :people do |t|
+    t.text :data_ciphertext
   end
 end

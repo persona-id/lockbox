@@ -1,23 +1,22 @@
 # Lockbox
 
-:package: Modern encryption for Rails
+:package: Modern encryption for Ruby and Rails
 
-- Uses state-of-the-art algorithms
 - Works with database fields, files, and strings
+- Maximizes compatibility with existing code and libraries
 - Makes migrating existing data and key rotation easy
-
-Lockbox aims to make encryption as friendly and intuitive as possible. Encrypted fields and files behave just like unencrypted ones for maximum compatibility with 3rd party libraries and existing code.
+- Has zero dependencies and many integrations
 
 Learn [the principles behind it](https://ankane.org/modern-encryption-rails), [how to secure emails with Devise](https://ankane.org/securing-user-emails-lockbox), and [how to secure sensitive data in Rails](https://ankane.org/sensitive-data-rails).
 
-[![Build Status](https://travis-ci.org/ankane/lockbox.svg?branch=master)](https://travis-ci.org/ankane/lockbox)
+[![Build Status](https://github.com/ankane/lockbox/workflows/build/badge.svg?branch=master)](https://github.com/ankane/lockbox/actions)
 
 ## Installation
 
 Add this line to your application’s Gemfile:
 
 ```ruby
-gem 'lockbox'
+gem "lockbox"
 ```
 
 ## Key Generation
@@ -28,7 +27,7 @@ Generate a key
 Lockbox.generate_key
 ```
 
-Store the key with your other secrets. This is typically Rails credentials or an environment variable ([dotenv](https://github.com/bkeepers/dotenv) is great for this). Be sure to use different keys in development and production. Keys don’t need to be hex-encoded, but it’s often easier to store them this way.
+Store the key with your other secrets. This is typically Rails credentials or an environment variable ([dotenv](https://github.com/bkeepers/dotenv) is great for this). Be sure to use different keys in development and production.
 
 Set the following environment variable with your key (you can use this one in development)
 
@@ -36,10 +35,17 @@ Set the following environment variable with your key (you can use this one in de
 LOCKBOX_MASTER_KEY=0000000000000000000000000000000000000000000000000000000000000000
 ```
 
+or add it to your credentials for each environment (`rails credentials:edit --environment <env>` for Rails 6+)
+
+```yml
+lockbox:
+  master_key: "0000000000000000000000000000000000000000000000000000000000000000"
+```
+
 or create `config/initializers/lockbox.rb` with something like
 
 ```ruby
-Lockbox.master_key = Rails.application.credentials.lockbox_master_key
+Lockbox.master_key = Rails.application.credentials.lockbox[:master_key]
 ```
 
 Then follow the instructions below for the data you want to encrypt.
@@ -66,7 +72,7 @@ Then follow the instructions below for the data you want to encrypt.
 Create a migration with:
 
 ```ruby
-class AddEmailCiphertextToUsers < ActiveRecord::Migration[6.0]
+class AddEmailCiphertextToUsers < ActiveRecord::Migration[6.1]
   def change
     add_column :users, :email_ciphertext, :text
   end
@@ -81,6 +87,8 @@ class User < ApplicationRecord
 end
 ```
 
+**Note:** With Rails 7, use `lockbox_encrypts` instead of `encrypts`
+
 You can use `email` just like any other attribute.
 
 ```ruby
@@ -88,6 +96,16 @@ User.create!(email: "hi@example.org")
 ```
 
 If you need to query encrypted fields, check out [Blind Index](https://github.com/ankane/blind_index).
+
+#### Multiple Fields
+
+You can specify multiple fields in single line.
+
+```ruby
+class User < ApplicationRecord
+  encrypts :email, :phone, :city
+end
+```
 
 #### Types
 
@@ -105,6 +123,7 @@ class User < ApplicationRecord
   encrypts :properties, type: :json
   encrypts :settings, type: :hash
   encrypts :messages, type: :array
+  encrypts :ip, type: :inet
 end
 ```
 
@@ -188,6 +207,42 @@ class User < ApplicationRecord
 end
 ```
 
+#### Model Changes
+
+If tracking changes to model attributes, be sure to remove or redact encrypted attributes.
+
+PaperTrail
+
+```ruby
+class User < ApplicationRecord
+  # for an encrypted history (still tracks ciphertext changes)
+  has_paper_trail skip: [:email]
+
+  # for no history (add blind indexes as well)
+  has_paper_trail skip: [:email, :email_ciphertext]
+end
+```
+
+Audited
+
+```ruby
+class User < ApplicationRecord
+  # for an encrypted history (still tracks ciphertext changes)
+  audited except: [:email]
+
+  # for no history (add blind indexes as well)
+  audited except: [:email, :email_ciphertext]
+end
+```
+
+#### Decryption
+
+To decrypt data outside the model, use:
+
+```ruby
+User.decrypt_email_ciphertext(user.email_ciphertext)
+```
+
 ## Action Text
 
 **Note:** Action Text uses direct uploads for files, which cannot be encrypted with application-level encryption like Lockbox. This only encrypts the database field.
@@ -195,7 +250,7 @@ end
 Create a migration with:
 
 ```ruby
-class AddBodyCiphertextToRichTexts < ActiveRecord::Migration[6.0]
+class AddBodyCiphertextToRichTexts < ActiveRecord::Migration[6.1]
   def change
     add_column :action_text_rich_texts, :body_ciphertext, :text
   end
@@ -221,6 +276,10 @@ Lockbox.encrypts_action_text_body
 ```
 
 And drop the unencrypted column.
+
+#### Options
+
+You can pass any Lockbox options to the `encrypts_action_text_body` method.
 
 ## Mongoid
 
@@ -279,9 +338,9 @@ def license
 end
 ```
 
-#### Migrating Existing Files [experimental]
+Use `filename` to specify a filename or `disposition: "inline"` to show inline.
 
-**Note:** This feature is experimental. Please try it in a non-production environment and [share](https://github.com/ankane/lockbox/issues/44) how it goes.
+#### Migrating Existing Files
 
 Lockbox makes it easy to encrypt existing files without downtime.
 
@@ -322,7 +381,7 @@ Encryption is applied to all versions after processing.
 You can mount the uploader [as normal](https://github.com/carrierwaveuploader/carrierwave#activerecord). With Active Record, this involves creating a migration:
 
 ```ruby
-class AddLicenseToUsers < ActiveRecord::Migration[6.0]
+class AddLicenseToUsers < ActiveRecord::Migration[6.1]
   def change
     add_column :users, :license, :string
   end
@@ -345,6 +404,8 @@ def license
   send_data user.license.read, type: user.license.content_type
 end
 ```
+
+Use `filename` to specify a filename or `disposition: "inline"` to show inline.
 
 #### Migrating Existing Files
 
@@ -393,6 +454,38 @@ Finally, delete the unencrypted files and drop the column for the original uploa
 
 ## Shrine
 
+#### Models
+
+Include the attachment as normal:
+
+```ruby
+class User < ApplicationRecord
+  include LicenseUploader::Attachment(:license)
+end
+```
+
+And encrypt in a controller (or background job, etc) with:
+
+```ruby
+license = params.require(:user).fetch(:license)
+lockbox = Lockbox.new(key: Lockbox.attribute_key(table: "users", attribute: "license"))
+user.license = lockbox.encrypt_io(license)
+```
+
+To serve encrypted files, use a controller action.
+
+```ruby
+def license
+  user = User.find(params[:id])
+  lockbox = Lockbox.new(key: Lockbox.attribute_key(table: "users", attribute: "license"))
+  send_data lockbox.decrypt(user.license.read), type: user.license.mime_type
+end
+```
+
+Use `filename` to specify a filename or `disposition: "inline"` to show inline.
+
+#### Non-Models
+
 Generate a key
 
 ```ruby
@@ -415,22 +508,6 @@ And decrypt them after reading
 
 ```ruby
 lockbox.decrypt(uploaded_file.read)
-```
-
-For models, encrypt with:
-
-```ruby
-license = params.require(:user).fetch(:license)
-user.license = lockbox.encrypt_io(license)
-```
-
-To serve encrypted files, use a controller action.
-
-```ruby
-def license
-  user = User.find(params[:id])
-  send_data lockbox.decrypt(user.license.read), type: user.license.mime_type
-end
 ```
 
 ## Local Files
@@ -497,11 +574,9 @@ Update your model:
 
 ```ruby
 class User < ApplicationRecord
-  encrypts :email, previous_versions: [{key: previous_key}]
+  encrypts :email, previous_versions: [{master_key: previous_key}]
 end
 ```
-
-Use `master_key` instead of `key` if passing the master key.
 
 To rotate existing records, use:
 
@@ -516,10 +591,8 @@ Once all records are rotated, you can remove `previous_versions` from the model.
 Update your initializer:
 
 ```ruby
-Lockbox.encrypts_action_text_body(previous_versions: [{key: previous_key}])
+Lockbox.encrypts_action_text_body(previous_versions: [{master_key: previous_key}])
 ```
-
-Use `master_key` instead of `key` if passing the master key.
 
 To rotate existing records, use:
 
@@ -535,11 +608,9 @@ Update your model:
 
 ```ruby
 class User < ApplicationRecord
-  encrypts_attached :license, previous_versions: [{key: previous_key}]
+  encrypts_attached :license, previous_versions: [{master_key: previous_key}]
 end
 ```
-
-Use `master_key` instead of `key` if passing the master key.
 
 To rotate existing files, use:
 
@@ -557,11 +628,9 @@ Update your model:
 
 ```ruby
 class LicenseUploader < CarrierWave::Uploader::Base
-  encrypt previous_versions: [{key: previous_key}]
+  encrypt previous_versions: [{master_key: previous_key}]
 end
 ```
-
-Use `master_key` instead of `key` if passing the master key.
 
 To rotate existing files, use:
 
@@ -635,7 +704,9 @@ This is the default algorithm. It’s:
 - an IETF standard
 - fast thanks to a [dedicated instruction set](https://en.wikipedia.org/wiki/AES_instruction_set)
 
-**For users who do a lot of encryptions:** You should rotate an individual key after 2 billion encryptions to minimize the chance of a [nonce collision](https://www.cryptologie.net/article/402/is-symmetric-security-solved/), which will expose the key. Each database field and file uploader use a different key (derived from the master key) to extend this window.
+Lockbox uses 256-bit keys.
+
+**For users who do a lot of encryptions:** You should rotate an individual key after 2 billion encryptions to minimize the chance of a [nonce collision](https://www.cryptologie.net/article/402/is-symmetric-security-solved/), which will expose the authentication key. Each database field and file uploader use a different key (derived from the master key) to extend this window.
 
 ### XSalsa20
 
@@ -648,7 +719,7 @@ brew install libsodium
 And add to your Gemfile:
 
 ```ruby
-gem 'rbnacl'
+gem "rbnacl"
 ```
 
 Then add to your model:
@@ -688,6 +759,22 @@ For Ubuntu 16.04, use:
 sudo apt-get install libsodium18
 ```
 
+##### GitHub Actions
+
+For Ubuntu 20.04 and 18.04, use:
+
+```yml
+    - name: Install Libsodium
+      run: sudo apt-get update && sudo apt-get install libsodium23
+```
+
+For Ubuntu 16.04, use:
+
+```yml
+    - name: Install Libsodium
+      run: sudo apt-get update && sudo apt-get install libsodium18
+```
+
 ##### Travis CI
 
 On Bionic, add to `.travis.yml`:
@@ -715,8 +802,7 @@ Add a step to `.circleci/config.yml`:
 ```yml
 - run:
     name: install Libsodium
-    command: |
-      sudo apt-get install -y libsodium18
+    command: sudo apt-get install -y libsodium18
 ```
 
 ## Hybrid Cryptography
@@ -743,19 +829,73 @@ Make sure `decryption_key` is `nil` on servers that shouldn’t decrypt.
 
 This uses X25519 for key exchange and XSalsa20 for encryption.
 
-## Key Separation
+## Key Configuration
 
-The master key is used to generate unique keys for each column. This technique comes from [CipherSweet](https://ciphersweet.paragonie.com/internals/key-hierarchy). The table name and column name are both used in this process. If you need to rename a table with encrypted columns, or an encrypted column itself, get the key:
+Lockbox supports a few different ways to set keys for database fields and files.
+
+1. Master key
+2. Per field/uploader
+3. Per record
+
+### Master Key
+
+By default, the master key is used to generate unique keys for each field/uploader. This technique comes from [CipherSweet](https://ciphersweet.paragonie.com/internals/key-hierarchy). The table name and column/uploader name are both used in this process.
+
+You can get an individual key with:
 
 ```ruby
 Lockbox.attribute_key(table: "users", attribute: "email_ciphertext")
 ```
 
-And set it directly before renaming:
+To rename a table with encrypted columns/uploaders, use:
+
+```ruby
+class User < ApplicationRecord
+  encrypts :email, key_table: "original_table"
+end
+```
+
+To rename an encrypted column itself, use:
+
+```ruby
+class User < ApplicationRecord
+  encrypts :email, key_attribute: "original_column"
+end
+```
+
+### Per Field/Uploader
+
+To set a key for an individual field/uploader, use a string:
 
 ```ruby
 class User < ApplicationRecord
   encrypts :email, key: ENV["USER_EMAIL_ENCRYPTION_KEY"]
+end
+```
+
+Or a proc:
+
+```ruby
+class User < ApplicationRecord
+  encrypts :email, key: -> { code }
+end
+```
+
+### Per Record
+
+To use a different key for each record, use a symbol:
+
+```ruby
+class User < ApplicationRecord
+  encrypts :email, key: :some_method
+end
+```
+
+Or a proc:
+
+```ruby
+class User < ApplicationRecord
+  encrypts :email, key: -> { some_method }
 end
 ```
 
@@ -855,7 +995,7 @@ lockbox.decrypt(ciphertext, associated_data: "othercontext") # fails
 You can use `binary` columns for the ciphertext instead of `text` columns.
 
 ```ruby
-class AddEmailCiphertextToUsers < ActiveRecord::Migration[6.0]
+class AddEmailCiphertextToUsers < ActiveRecord::Migration[6.1]
   def change
     add_column :users, :email_ciphertext, :binary
   end
@@ -868,12 +1008,6 @@ Disable Base64 encoding to save space.
 class User < ApplicationRecord
   encrypts :email, encode: false
 end
-```
-
-or set it globally:
-
-```ruby
-Lockbox.default_options = {encode: false}
 ```
 
 ## Compatibility
@@ -906,7 +1040,7 @@ end
 Create a migration with:
 
 ```ruby
-class MigrateToLockbox < ActiveRecord::Migration[6.0]
+class MigrateToLockbox < ActiveRecord::Migration[6.1]
   def change
     add_column :users, :name_ciphertext, :text
     add_column :users, :email_ciphertext, :text
@@ -939,7 +1073,7 @@ end
 Then remove the previous gem from your Gemfile and drop its columns.
 
 ```ruby
-class RemovePreviousEncryptedColumns < ActiveRecord::Migration[6.0]
+class RemovePreviousEncryptedColumns < ActiveRecord::Migration[6.1]
   def change
     remove_column :users, :encrypted_name, :text
     remove_column :users, :encrypted_name_iv, :text
@@ -951,12 +1085,29 @@ end
 
 ## Upgrading
 
+### 0.6.0
+
+0.6.0 adds `encrypted: true` to Active Storage metadata for new files. This field is informational, but if you prefer to add it to existing files, use:
+
+```ruby
+User.with_attached_license.find_each do |user|
+  next unless user.license.attached?
+
+  metadata = user.license.metadata
+  unless metadata["encrypted"]
+    user.license.blob.update!(metadata: metadata.merge("encrypted" => true))
+  end
+end
+```
+
 ### 0.3.6
 
 0.3.6 makes content type detection more reliable for Active Storage. You can check and update the content type of existing files with:
 
 ```ruby
-User.find_each do |user|
+User.with_attached_license.find_each do |user|
+  next unless user.license.attached?
+
   license = user.license
   content_type = Marcel::MimeType.for(license.download, name: license.filename.to_s)
   if content_type != license.content_type

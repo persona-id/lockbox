@@ -14,7 +14,17 @@ class ModelTypesTest < Minitest::Test
   end
 
   def test_type_string_non_utf8
-    if postgresql? || mysql?
+    if mysql? && ActiveRecord::VERSION::MAJOR >= 7
+      error = assert_raises(ActiveRecord::StatementInvalid) do
+        assert_attribute :country, "Hi \255", format: "Hi \255"
+      end
+      assert_includes error.message, "Incorrect string value"
+    elsif mysql? && ActiveRecord::VERSION::STRING >= "6.1"
+      error = assert_raises(ArgumentError) do
+        assert_attribute :country, "Hi \255", format: "Hi \255"
+      end
+      assert_includes error.message, "invalid byte sequence in UTF-8"
+    elsif postgresql? || mysql?
       error = assert_raises(ActiveRecord::StatementInvalid) do
         assert_attribute :country, "Hi \255", format: "Hi \255"
       end
@@ -47,6 +57,22 @@ class ModelTypesTest < Minitest::Test
 
   def test_type_boolean_empty_string
     assert_attribute :active, "", expected: nil
+  end
+
+  def test_type_boolean_query_attribute
+    user = User.create!(active: true, active2: true)
+    assert user.active?
+    assert user.active2?
+    user = User.last
+    assert user.active?
+    assert user.active2?
+
+    user = User.create!(active: false, active2: false)
+    refute user.active?
+    refute user.active2?
+    user = User.last
+    refute user.active?
+    refute user.active2?
   end
 
   def test_type_date
@@ -142,6 +168,22 @@ class ModelTypesTest < Minitest::Test
     end
   end
 
+  def test_type_integer_query_attribute
+    user = User.create!(sign_in_count: 1, sign_in_count2: 1)
+    assert user.sign_in_count?
+    assert user.sign_in_count2?
+    user = User.last
+    assert user.sign_in_count?
+    assert user.sign_in_count2?
+
+    user = User.create!(sign_in_count: 0, sign_in_count2: 0)
+    refute user.sign_in_count?
+    refute user.sign_in_count2?
+    user = User.last
+    refute user.sign_in_count?
+    refute user.sign_in_count2?
+  end
+
   def test_type_float
     skip if mysql?
 
@@ -217,6 +259,17 @@ class ModelTypesTest < Minitest::Test
     assert_equal "world", user.data2["c"]
   end
 
+  def test_type_json_in_place_callbacks
+    Person.create!(data: {"count" => 0})
+
+    person = Person.last
+    assert_equal 1, person.data["count"]
+    person.save!
+
+    person = Person.last
+    assert_equal 2, person.data["count"]
+  end
+
   def test_type_json_save_twice
     data2 = {a: 1, b: "hi"}
     user = User.create!(data2: data2)
@@ -272,6 +325,12 @@ class ModelTypesTest < Minitest::Test
     assert_equal info2, user.info2
   end
 
+  def test_type_hash_empty
+    user = User.create!
+    assert_equal({}, user.info)
+    assert_equal({}, user.info2)
+  end
+
   def test_type_array
     coordinates = [1, 2, 3]
     assert_attribute :coordinates, coordinates, format: coordinates.to_yaml
@@ -311,6 +370,12 @@ class ModelTypesTest < Minitest::Test
     user.coordinates2
     user.save!
     assert_equal coordinates2, user.coordinates2
+  end
+
+  def test_type_array_empty
+    user = User.create!
+    assert_equal [], user.coordinates
+    assert_equal [], user.coordinates2
   end
 
   def test_serialize_json
@@ -392,6 +457,44 @@ class ModelTypesTest < Minitest::Test
     assert_raises ActiveRecord::SerializationTypeMismatch do
       User.create!(messages2: "invalid")
     end
+  end
+
+  def test_type_inet_ipv4
+    skip unless inet_supported?
+
+    ip = IPAddr.new("127.0.0.1")
+    assert_attribute :ip, ip, expected: ip, format: [0, 32, ip.hton, "\x00"*12].pack("cca4a12")
+    assert_attribute :ip, ip.to_s, expected: ip, format: [0, 32, ip.hton, "\x00"*12].pack("cca4a12")
+  end
+
+  def test_type_inet_ipv4_prefix
+    skip unless inet_supported?
+
+    ip = IPAddr.new("127.0.0.0/24")
+    assert_attribute :ip, ip, expected: ip, format: [0, 24, ip.hton, "\x00"*12].pack("cca4a12")
+    assert_attribute :ip, "127.0.0.0/24", expected: ip, format: [0, 24, ip.hton, "\x00"*12].pack("cca4a12")
+  end
+
+  def test_type_inet_ipv6
+    skip unless inet_supported?
+
+    ip = IPAddr.new("::")
+    assert_attribute :ip, ip, expected: ip, format: [1, 128, ip.hton].pack("cca16")
+    assert_attribute :ip, ip.to_s, expected: ip, format: [1, 128, ip.hton].pack("cca16")
+  end
+
+  def test_type_inet_bytesize
+    skip unless inet_supported?
+
+    assert_bytesize :ip, "127.0.0.1", "255.255.255.255", size: 18
+    assert_bytesize :ip, "::", "2606:4700:4700::64", size: 18
+    assert_bytesize :ip, "127.0.0.0/24", "255.255.255.255", size: 18
+  end
+
+  def test_type_inet_invalid
+    skip unless inet_supported?
+
+    assert_attribute :ip, "invalid", expected: nil
   end
 
   def test_store
@@ -480,12 +583,12 @@ class ModelTypesTest < Minitest::Test
 
   def assert_bytesize(*args, size: nil)
     sizes = bytesizes(*args)
-    assert_equal *sizes
+    assert_equal(*sizes)
     assert_equal size, sizes[0] - 12 - 16 if size
   end
 
   def refute_bytesize(*args)
-    refute_equal *bytesizes(*args)
+    refute_equal(*bytesizes(*args))
   end
 
   def bytesizes(attribute, value1, value2)
@@ -504,5 +607,11 @@ class ModelTypesTest < Minitest::Test
 
   def postgresql?
     ENV["ADAPTER"] == "postgresql"
+  end
+
+  def inet_supported?
+    # no NoMethodError for prefix method
+    # but it exists in Ruby 2.4 docs
+    postgresql? && RUBY_VERSION.to_f > 2.4
   end
 end
