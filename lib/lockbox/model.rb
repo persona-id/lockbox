@@ -492,6 +492,7 @@ module Lockbox
             if message.nil? || (message == "" && !options[:padding])
               message
             else
+              Rails.logger.info("We're inside the local gem! Encryption is happening!")
               Lockbox::Utils.build_box(opts[:context], options, table, encrypted_attribute).encrypt(message)
             end
           end
@@ -502,6 +503,7 @@ module Lockbox
                 ciphertext
               else
                 table = activerecord ? table_name : collection_name.to_s
+                Rails.logger.info("We're inside the local gem! Decryption is happening!")
                 Lockbox::Utils.build_box(opts[:context], options, table, encrypted_attribute).decrypt(ciphertext)
               end
 
