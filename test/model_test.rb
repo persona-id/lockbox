@@ -213,19 +213,49 @@ class ModelTest < Minitest::Test
   def test_attributes
     skip if mongoid?
 
-    User.create!(email: "test@example.org")
-    user = User.last
-    assert_equal "test@example.org", user.attributes["email"]
+    if ActiveRecord::VERSION::MAJOR < 6
+      # Dirty tracking was added to store accessors in Rails 6. If creating with
+      # lockbox encrypted attribute in a store in Rails 5, you'll get a
+      # "NoMethodError: undefined method `foo_ciphertext_changed?`" exception.
+      # Rather than fix this, prefer upgrading Rails.
+      User.create!(email: "test@example.org")
+      user = User.last
+      assert_equal "test@example.org", user.attributes["email"]
+    else
+      User.create!(
+        email: "test@example.org", password: "Passw0rd!", password2: "Passw0rd!2"
+      )
+      user = User.last
+      assert_equal "test@example.org", user.attributes["email"]
+      assert_equal "Passw0rd!", user.attributes["password"]
+      assert_equal "Passw0rd!2", user.attributes["password2"]
+    end
   end
 
   def test_attributes_not_loaded
     skip if mongoid?
 
-    User.create!(email: "test@example.org")
-    user = User.select('id').last
-    assert_nil user.attributes['email']
-    assert !user.has_attribute?("name")
-    assert !user.has_attribute?(:name)
+    if ActiveRecord::VERSION::MAJOR < 6
+      # Dirty tracking was added to store accessors in Rails 6. If creating with
+      # lockbox encrypted attribute in a store in Rails 5, you'll get a
+      # "NoMethodError: undefined method `foo_ciphertext_changed?`" exception.
+      # Rather than fix this, prefer upgrading Rails.
+      User.create!(email: "test@example.org")
+      user = User.select('id').last
+      assert_nil user.attributes['email']
+      assert !user.has_attribute?("name")
+      assert !user.has_attribute?(:name)
+    else
+      User.create!(
+        email: "test@example.org", password: "Passw0rd!", password2: "Passw0rd!2"
+      )
+      user = User.select('id').last
+      assert_nil user.attributes['email']
+      assert_nil user.attributes['password']
+      assert_nil user.attributes['password2']
+      assert !user.has_attribute?("name")
+      assert !user.has_attribute?(:name)
+    end
 
     # TODO try to make virtual attribute behavior consistent
     # this may be difficult, as virtual attributes are set to self.class._default_attributes
@@ -234,6 +264,10 @@ class ModelTest < Minitest::Test
     # assert_equal ["id"], user.attribute_names
     # assert !user.has_attribute?("email")
     # assert !user.has_attribute?(:email)
+    # assert !user.has_attribute?("password")
+    # assert !user.has_attribute?(:password)
+    # assert !user.has_attribute?("password2")
+    # assert !user.has_attribute?(:password2)
 
     user = User.select("id AS email_ciphertext").last
     assert_raises(Lockbox::DecryptionError) do

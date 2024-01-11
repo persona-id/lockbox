@@ -146,6 +146,25 @@ module Lockbox
                     rescue ArgumentError => e
                       raise e if e.message != "No decryption key set"
                     end
+                    next
+                  end
+
+                  # encrypted attribute could be inside an ActiveRecord::Store
+                  # which doesn't expose accessors of store as attributes, so
+                  # check if attribute for store is loaded
+                  encrypted_attribute = lockbox_attribute[:encrypted_attribute].to_sym
+                  store, _ = self.class.stored_attributes.detect do |_, accessors|
+                    accessors.map(&:to_sym).include?(encrypted_attribute)
+                  end
+                  if store
+                    # if entire store is encrypted, check if encrypted attribute
+                    # for store is loaded
+                    store_encrypted_attribute = self.class.lockbox_attributes.dig(
+                      store.to_sym, :encrypted_attribute
+                    )
+                    if has_attribute?(store_encrypted_attribute || store)
+                      send(lockbox_attribute[:attribute])
+                    end
                   end
                 end
                 super
