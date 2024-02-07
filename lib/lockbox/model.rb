@@ -22,18 +22,20 @@ module Lockbox
       # when BigDecimal
       #   options[:type] = :decimal
       # end
-
       custom_type = options[:type].respond_to?(:serialize) && options[:type].respond_to?(:deserialize)
       valid_types = [nil, :string, :boolean, :date, :datetime, :time, :integer, :float, :decimal, :binary, :json, :hash, :array, :inet]
       raise ArgumentError, "Unknown type: #{options[:type]}" unless custom_type || valid_types.include?(options[:type])
 
       activerecord = defined?(ActiveRecord::Base) && self < ActiveRecord::Base
-      raise ArgumentError, "Type not supported yet with Mongoid" if options[:type] && !activerecord
+      mongoid = defined?(Mongoid::Document) && self < Mongoid::Document
 
       raise ArgumentError, "No attributes specified" if attributes.empty?
 
       raise ArgumentError, "Cannot use key_attribute with multiple attributes" if options[:key_attribute] && attributes.size > 1
 
+      if mongoid
+        options.delete(:type)
+      end
       original_options = options.dup
 
       attributes.each do |name|
@@ -493,6 +495,13 @@ module Lockbox
           # separate method for setting directly
           # used to skip blind indexes for key rotation
           define_method("lockbox_direct_#{name}=") do |message|
+            if mongoid
+              begin
+                message = ActiveSupport::Gzip.compress(message.to_json)
+              rescue Zlib::GzipFile::Error
+                message
+              end
+            end
             ciphertext = self.class.send(encrypt_method_name, message, context: self)
             send("#{encrypted_attribute}=", ciphertext)
           end
@@ -510,6 +519,14 @@ module Lockbox
               # keep original message for empty hashes and arrays
               unless ciphertext.nil?
                 message = self.class.send(decrypt_method_name, ciphertext, context: self)
+                if mongoid
+                  begin
+                    message = ActiveSupport::Gzip.decompress(message)
+                  rescue Zlib::GzipFile::Error
+                    message
+                  end
+                  # message decrypted_field.demongoize(message)
+                end
               end
 
               if activerecord

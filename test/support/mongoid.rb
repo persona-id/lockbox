@@ -16,6 +16,8 @@ class User
   field :region_ciphertext, type: String
   field :state, type: String
   field :state_ciphertext, type: String
+  
+  field :active_ciphertext, type: String
 
   has_encrypted :email, previous_versions: [{key: Lockbox.generate_key}, {master_key: Lockbox.generate_key}]
 
@@ -26,6 +28,8 @@ class User
   has_encrypted :ssn, encode: false
   has_encrypted :region, associated_data: -> { name }
   has_encrypted :state
+  
+  has_encrypted :active, type: :boolean
 
   include PhotoUploader::Attachment(:photo)
   field :photo_data, type: String
