@@ -35,6 +35,58 @@ module Lockbox
       perform_attachments(attachments: attachments, restart: restart) if attachments.any?
     end
 
+    # there's a small chance for this process to read data,
+    # another process to update the data, and
+    # this process to write the now stale data
+    # this time window can be reduced with smaller batch sizes
+    # locking individual records could eliminate this
+    # one option is: relation.in_batches { |batch| batch.lock }
+    # which runs SELECT ... FOR UPDATE in Postgres
+    def migrate_records(records, fields:, blind_indexes:, restart:, rotate:)
+      # do computation outside of transaction
+      # especially expensive blind index computation
+      if rotate
+        records.each do |record|
+          fields.each do |k, v|
+            # update encrypted attribute directly to skip blind index computation
+            record.send("lockbox_direct_#{k}=", record.send(k))
+          end
+        end
+      else
+        records.each do |record|
+          if restart
+            fields.each do |k, v|
+              record.send("#{v[:encrypted_attribute]}=", nil)
+            end
+
+            blind_indexes.each do |k, v|
+              record.send("#{v[:bidx_attribute]}=", nil)
+            end
+          end
+
+          fields.each do |k, v|
+            record.send("#{v[:attribute]}=", record.send(k)) unless record.send(v[:encrypted_attribute])
+          end
+
+          # with Blind Index 2.0, bidx_attribute should be already set for each record
+          blind_indexes.each do |k, v|
+            record.send("compute_#{k}_bidx") unless record.send(v[:bidx_attribute])
+          end
+        end
+      end
+
+      # don't need to save records that went from nil => nil
+      records.select! { |r| r.changed? }
+
+      if records.any?
+        with_transaction do
+          records.each do |record|
+            record.save!(validate: false)
+          end
+        end
+      end
+    end
+
     private
 
     def perform_attachments(attachments:, restart:)
@@ -113,58 +165,6 @@ module Lockbox
           end
         end
         yield records if records.any?
-      end
-    end
-
-    # there's a small chance for this process to read data,
-    # another process to update the data, and
-    # this process to write the now stale data
-    # this time window can be reduced with smaller batch sizes
-    # locking individual records could eliminate this
-    # one option is: relation.in_batches { |batch| batch.lock }
-    # which runs SELECT ... FOR UPDATE in Postgres
-    def migrate_records(records, fields:, blind_indexes:, restart:, rotate:)
-      # do computation outside of transaction
-      # especially expensive blind index computation
-      if rotate
-        records.each do |record|
-          fields.each do |k, v|
-            # update encrypted attribute directly to skip blind index computation
-            record.send("lockbox_direct_#{k}=", record.send(k))
-          end
-        end
-      else
-        records.each do |record|
-          if restart
-            fields.each do |k, v|
-              record.send("#{v[:encrypted_attribute]}=", nil)
-            end
-
-            blind_indexes.each do |k, v|
-              record.send("#{v[:bidx_attribute]}=", nil)
-            end
-          end
-
-          fields.each do |k, v|
-            record.send("#{v[:attribute]}=", record.send(k)) unless record.send(v[:encrypted_attribute])
-          end
-
-          # with Blind Index 2.0, bidx_attribute should be already set for each record
-          blind_indexes.each do |k, v|
-            record.send("compute_#{k}_bidx") unless record.send(v[:bidx_attribute])
-          end
-        end
-      end
-
-      # don't need to save records that went from nil => nil
-      records.select! { |r| r.changed? }
-
-      if records.any?
-        with_transaction do
-          records.each do |record|
-            record.save!(validate: false)
-          end
-        end
       end
     end
 
