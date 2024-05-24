@@ -156,7 +156,7 @@ class LockboxTest < Minitest::Test
     ciphertext = lockbox.encrypt(message)
 
     lockbox = Lockbox.new(algorithm: "hybrid", decryption_key: key_pair[:encryption_key])
-    assert_raises(Lockbox::DecryptionError) do
+    assert_raises(Lockbox::DecryptionError, /Couldn't encrypt payload. Original payload:/) do
       lockbox.decrypt(ciphertext)
     end
   end
@@ -189,7 +189,7 @@ class LockboxTest < Minitest::Test
   def test_bad_ciphertext
     lockbox = Lockbox.new(key: random_key)
 
-    assert_raises(Lockbox::DecryptionError) do
+    assert_raises(Lockbox::DecryptionError, /Encrypted payload:/) do
       lockbox.decrypt("0")
     end
 
