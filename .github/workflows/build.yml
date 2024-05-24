@@ -25,7 +25,6 @@ jobs:
             gemfile: gemfiles/mongoid9.gemfile
             mongodb: true
 
-
     env:
       BUNDLE_GEMFILE: ${{ matrix.gemfile }}
     steps:
