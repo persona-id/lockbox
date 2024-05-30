@@ -45,14 +45,10 @@ module Lockbox
               # was actually plaintext somehow. Then, we log the ciphertext and the error class,
               # so we can investigate further.
               #
-              # Note that we rescue ArgumentError below, since that's what gets raised
-              # when the box can't perform an encrypt operation.
-              re_encrypted_ciphertext = begin
-                box.encrypt(ciphertext, **options)
-              rescue ArgumentError
-                raise DecryptionError, "Decryption failed. Error: #{e.class}. Couldn't encrypt payload. Original payload: #{Base64.strict_encode64(ciphertext)}"
-              end
-              raise DecryptionError, "Decryption failed. Error: #{e.class}. Encrypted payload: #{Base64.strict_encode64(re_encrypted_ciphertext)}"
+              # We use a separate lockbox instance to simplify the decryption process to recover
+              # the original problematic payload.
+              logging_lockbox = Lockbox::Utils.build_box(nil, {key: Lockbox.master_key, encode: true}, nil, nil)
+              raise DecryptionError, "Decryption failed. Error: #{e.class}. Encrypted payload: #{logging_lockbox.encrypt(ciphertext)}"
             end
           else
             raise e
