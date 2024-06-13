@@ -137,21 +137,22 @@ module Lockbox
                 # essentially a no-op if already loaded
                 # an exception is thrown if decryption fails
                 self.class.lockbox_attributes.each do |_, lockbox_attribute|
-                  # don't try to decrypt if no decryption key given
-                  next if lockbox_attribute[:algorithm] == "hybrid" && lockbox_attribute[:decryption_key].nil?
-
                   # it is possible that the encrypted attribute is not loaded, eg.
                   # if the record was fetched partially (`User.select(:id).first`).
                   # accessing a not loaded attribute raises an `ActiveModel::MissingAttributeError`.
-                  encrypted_attribute = lockbox_attribute[:encrypted_attribute]
-                  if has_attribute?(encrypted_attribute)
-                    send(lockbox_attribute[:attribute])
+                  if has_attribute?(lockbox_attribute[:encrypted_attribute])
+                    begin
+                      send(lockbox_attribute[:attribute])
+                    rescue ArgumentError => e
+                      raise e if e.message != "No decryption key set"
+                    end
                     next
                   end
 
                   # encrypted attribute could be inside an ActiveRecord::Store
                   # which doesn't expose accessors of store as attributes, so
                   # check if attribute for store is loaded
+                  encrypted_attribute = lockbox_attribute[:encrypted_attribute]
                   store, _ = self.class.stored_attributes.detect do |_, accessors|
                     accessors.map(&:to_sym).include?(encrypted_attribute.to_sym)
                   end
@@ -513,12 +514,12 @@ module Lockbox
             # decrypt first for dirty tracking
             # don't raise error if can't decrypt previous
             # don't try to decrypt if no decryption key given
-            unless options[:algorithm] == "hybrid" && options[:decryption_key].nil?
-              begin
-                send(name)
-              rescue Lockbox::DecryptionError
-                warn "[lockbox] Decrypting previous value failed"
-              end
+            begin
+              send(name)
+            rescue Lockbox::DecryptionError
+              warn "[lockbox] Decrypting previous value failed"
+            rescue ArgumentError => e
+              raise e if e.message != "No decryption key set"
             end
 
             send("lockbox_direct_#{name}=", message)
