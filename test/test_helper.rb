@@ -1,4 +1,5 @@
 require "bundler/setup"
+require "logger"
 require "carrierwave"
 require "combustion"
 Bundler.require(:default)

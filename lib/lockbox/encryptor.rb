@@ -39,7 +39,17 @@ module Lockbox
           error_classes << RbNaCl::LengthError if defined?(RbNaCl::LengthError)
           error_classes << RbNaCl::CryptoError if defined?(RbNaCl::CryptoError)
           if error_classes.any? { |ec| e.is_a?(ec) }
-            raise DecryptionError, "Decryption failed" if i == @boxes.size - 1
+            if i == @boxes.size - 1
+              # See https://withpersona.slack.com/archives/C02TE6J9JB0/p1716411555974969
+              # When possible, we re-encrypt the ciphertext, just in case whatever was passed to lockbox
+              # was actually plaintext somehow. Then, we log the ciphertext and the error class,
+              # so we can investigate further.
+              #
+              # We use a separate lockbox instance to simplify the decryption process to recover
+              # the original problematic payload.
+              logging_lockbox = Lockbox::Utils.build_box(nil, {key: Lockbox.master_key, encode: true}, nil, nil)
+              raise DecryptionError, "Decryption failed. Error: #{e.class}. Encrypted payload: #{logging_lockbox.encrypt(ciphertext)}"
+            end
           else
             raise e
           end
